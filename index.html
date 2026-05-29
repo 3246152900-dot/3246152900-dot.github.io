@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>闪电捕手 - 瞬时认知反应力极限挑战</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f9; height: 100vh; display: flex; flex-direction: column; color: #333; }
+        
+        /* 1. 游戏欢迎页 */
+        #welcome-page { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; padding: 30px; text-align: center; background: linear-gradient(135deg, #1f2937, #111827); color: white; }
+        .hero-title { font-size: 32px; font-weight: 800; margin-bottom: 10px; background: linear-gradient(to right, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .intro-text { font-size: 15px; color: #9ca3af; margin-bottom: 30px; line-height: 1.6; }
+        .start-btn { background: #3b82f6; color: white; font-size: 18px; font-weight: bold; border: none; padding: 15px 40px; border-radius: 30px; width: 80%; max-width: 300px; box-shadow: 0 4px 14px rgba(59,130,246,0.4); cursor: pointer; }
+
+        /* 2. 核心挑战页 */
+        #challenge-page { display: none; flex-direction: column; height: 100%; padding: 20px; justify-content: space-between; position: relative; }
+        .progress-bar { font-size: 14px; color: #6b7280; font-weight: 600; text-align: center; margin-top: 10px; }
+        .word-box { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .word-text { font-size: 46px; font-weight: 800; color: #111827; letter-spacing: -1px; }
+        .word-hint { font-size: 16px; color: #9ca3af; margin-top: 10px; font-style: italic; }
+
+        /* 核心：动态A/B布局切换 */
+        .action-zone { display: grid; gap: 5mm; width: 100%; margin-bottom: 20px; }
+        .action-btn { border: none; font-size: 18px; font-weight: bold; border-radius: 16px; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .btn-recognize { background: #10b981; color: white; }
+        .btn-forget { background: #f97316; color: white; }
+        
+        .layout-style-A { grid-template-columns: 1fr 1fr; height: 110px; justify-items: center; align-items: center; } /* 左右方块 */
+        .layout-style-B { grid-template-columns: 1fr; height: 100px; }    /* 上下长条 - 更窄 */
+        .layout-style-B .action-btn { height: 48px; }
+
+        /* 3. 结果查看页 */
+        #result-page { display: none; flex-direction: column; height: 100%; padding: 20px; overflow-y: auto; background: white; }
+        .result-badge { text-align: center; padding: 30px 10px; background: #eff6ff; border-radius: 20px; margin-bottom: 20px; }
+        .badge-title { font-size: 28px; font-weight: 800; color: #1d4ed8; }
+        .data-inspector { font-family: monospace; font-size: 11px; background: #1e293b; color: #38bdf8; padding: 15px; border-radius: 12px; white-space: pre; overflow-x: auto; line-height: 1.5; flex: 1; }
+    </style>
+</head>
+<body>
+
+    <div id="welcome-page">
+        <div class="hero-title">⚡闪电捕手</div>
+        <p class="intro-text">这是一个针对人类“大脑瞬时直觉”的认知测试。<br>只需在看到单词时下意识选择“认识”或“不认识”。本实验仅用于评估背词软件的按键布局合理性，不对个人词汇量或反应力进行评估。</p>
+        <button class="start-btn" onclick="requestPermissionAndStart()">开始极限挑战</button>
+    </div>
+
+    <div id="challenge-page">
+        <div class="progress-bar">CHALLENGE: <span id="idx-view">1</span> / 30</div>
+        
+        <div class="word-box">
+            <div class="word-text" id="target-word">Loading...</div>
+            <div class="word-hint" id="target-hint">/ /</div>
+        </div>
+
+        <div class="action-zone" id="btn-container">
+            </div>
+    </div>
+
+    <div id="result-page">
+        <div class="result-badge">
+            <p style="color: #64748b; font-size: 14px; font-weight: bold;">你的测试称号</p>
+            <div class="badge-title">⚡ 闪电捕手 ⚡</div>
+            <p style="color: #3b82f6; font-size: 13px; margin-top: 5px;">反应力击败了全国 98.4% 的用户</p>
+        </div>
+        <h4 style="margin-bottom: 8px; color: #1e293b;">🔬 实验后台捕获的真实学术数据 (CSV):</h4>
+        <div class="data-inspector" id="csv-viewer"></div>
+        <button class="start-btn" style="margin: 20px auto 0 auto; width: 100%;" onclick="location.reload()">重新测试</button>
+    </div>
+
+    <script>
+        // CONFIG: central hit ratio and button height (single parameter change affects height)
+        const CONFIG = { centralHitRatio: 0.9, buttonHeightMM: 15, buttonWidthMM: 15, easyCount: 15, hardCount: 15 };
+
+        // Candidate word lists
+        const EASY_WORDS = ['apple','banana','water','coffee','happy','cat','hello','music','school','sleep','job','work','easy','you','fast','like','love','on','off','smile'];
+        const HARD_WORDS = ['исчезнуть','verschwinden','glandula','flisni','pargata','dohr','ka-neek','qannik','Hiraeth','Koyaanisqatsi','szybko','xyzzy','tlhIngan','ṣaḍa','øbskur','extraneus','qwertyuiop'];
+
+        // Build lexicon with configured counts
+        function buildLexicon(){
+            const lex = [];
+            // easy words: no special hint (could be extended with phonetics if desired)
+            for(let i=0;i<CONFIG.easyCount && i<EASY_WORDS.length;i++){
+                lex.push({w:EASY_WORDS[i], type:'easy', h:''});
+            }
+            // hard words: provide explicit unknown-language hint like the original file
+            for(let i=0;i<CONFIG.hardCount && i<HARD_WORDS.length;i++){
+                const hintIndex = (i+1).toString().padStart(2,'0');
+                const hint = `[未知语种-词条${hintIndex}]`;
+                lex.push({w:HARD_WORDS[i], type:'hard', h:hint});
+            }
+            return lex;
+        }
+
+        // Build sequence without runs longer than maxRun (maxRun = 3 -> no 4 in a row)
+        function buildSequence(items, maxRun=3){
+            const groups = {};
+            items.forEach(it=>{ groups[it.type] = groups[it.type] || []; groups[it.type].push(it); });
+            const types = Object.keys(groups);
+            const remaining = {};
+            types.forEach(t=> remaining[t] = groups[t].slice());
+            const result = [];
+            let lastType = null, lastRun = 0;
+
+            function totalRemaining(){ return Object.values(remaining).reduce((s,a)=>s+a.length,0); }
+
+            while(totalRemaining() > 0){
+                const candidates = types.filter(t => remaining[t].length > 0 && (t !== lastType || lastRun < maxRun));
+                let pickType = null;
+                if(candidates.length === 0){
+                    // forced pick: choose type with most remaining
+                    pickType = types.reduce((a,b)=> remaining[a].length >= remaining[b].length ? a : b);
+                } else {
+                    // random weighted pick among candidates
+                    let sum = candidates.reduce((s,t)=> s + remaining[t].length, 0);
+                    let r = Math.floor(Math.random() * sum);
+                    for(let t of candidates){ if(r < remaining[t].length){ pickType = t; break; } r -= remaining[t].length; }
+                    if(!pickType) pickType = candidates[0];
+                }
+                result.push(remaining[pickType].shift());
+                if(pickType === lastType) lastRun++; else { lastType = pickType; lastRun = 1; }
+            }
+            return result;
+        }
+
+        // State
+        let mockLexicon = buildLexicon();
+        mockLexicon = buildSequence(mockLexicon, 3);
+        let experimentData = [];
+        let currentStep = 0;
+        let wordStartTime = 0;
+        const assignedLayout = 'A';
+
+        // Motion sensor
+        let gyroMotionSamples = [];
+        let gyroIntervalId = null;
+        let currentX=0,currentY=0,currentZ=0;
+        function activateMotionSensor(){
+            window.addEventListener('devicemotion', (event)=>{
+                if(event.accelerationIncludingGravity){ currentX = event.accelerationIncludingGravity.x || 0; currentY = event.accelerationIncludingGravity.y || 0; currentZ = event.accelerationIncludingGravity.z || 0; }
+            });
+            gyroIntervalId = setInterval(()=>{ const v = Math.sqrt(currentX*currentX + currentY*currentY + currentZ*currentZ); if(v>0) gyroMotionSamples.push(v); }, 100);
+        }
+
+        // Permission + start (keeps API name same as original)
+        function requestPermissionAndStart(){
+            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+                DeviceMotionEvent.requestPermission().then(s=>{ if(s==='granted') activateMotionSensor(); runExperiment(); }).catch(()=>{ runExperiment(); });
+            } else { activateMotionSensor(); runExperiment(); }
+        }
+
+        function runExperiment(){
+            document.getElementById('welcome-page').style.display = 'none';
+            document.getElementById('challenge-page').style.display = 'flex';
+            if(!window._pointerHandlerAttached){ document.getElementById('challenge-page').addEventListener('pointerdown', handlePointerDown); window._pointerHandlerAttached = true; }
+
+            // Rebuild lexicon and sequence for this session
+            mockLexicon = buildLexicon();
+            mockLexicon = buildSequence(mockLexicon, 3);
+            currentStep = 0; experimentData = [];
+            nextWord();
+        }
+
+        function nextWord(){
+            if(currentStep >= mockLexicon.length){ terminateExperiment(); return; }
+            const currentData = mockLexicon[currentStep];
+            document.getElementById('idx-view').innerText = currentStep + 1;
+            document.getElementById('target-word').innerText = currentData.w;
+            document.getElementById('target-hint').innerText = currentData.h || '';
+
+            const container = document.getElementById('btn-container');
+            container.innerHTML = '';
+            container.className = assignedLayout === 'A' ? 'action-zone layout-style-A' : 'action-zone layout-style-B';
+
+            const btnA = document.createElement('button'); btnA.className = 'action-btn btn-forget'; btnA.dataset.choice = 'forget'; btnA.innerText = '不认识';
+            const btnB = document.createElement('button'); btnB.className = 'action-btn btn-recognize'; btnB.dataset.choice = 'recognize'; btnB.innerText = '我认识';
+            if(assignedLayout === 'A'){ container.appendChild(btnA); container.appendChild(btnB); } else { container.appendChild(btnB); container.appendChild(btnA); }
+
+            // Width fits grid cell; height fixed
+            container.querySelectorAll('.action-btn').forEach(b=>{
+                b.style.width = CONFIG.buttonWidthMM + 'mm';
+                b.style.height = CONFIG.buttonHeightMM + 'mm';
+                b.style.minWidth = CONFIG.buttonWidthMM + 'mm'; b.style.minHeight = CONFIG.buttonHeightMM + 'mm';
+                b.style.boxSizing = 'border-box'; b.style.margin = '0';
+                b.style.fontSize = '16px'; b.style.padding = '6px 10px';
+            });
+            container.style.paddingLeft = '10px'; container.style.paddingRight = '10px';
+
+            wordStartTime = performance.now();
+        }
+
+        function handlePointerDown(ev){
+            ev.preventDefault();
+            const hitTime = performance.now(); const reactionTimeMs = Math.round(hitTime - wordStartTime);
+            const target = ev.target; const currentItem = mockLexicon[currentStep] || {w:'',type:''};
+            if(target.classList && target.classList.contains('action-btn')){
+                const rect = target.getBoundingClientRect();
+                const insetX = rect.width * (1 - CONFIG.centralHitRatio) / 2;
+                const insetY = rect.height * (1 - CONFIG.centralHitRatio) / 2;
+                const inner = { left: rect.left + insetX, right: rect.right - insetX, top: rect.top + insetY, bottom: rect.bottom - insetY };
+                const x = ev.clientX, y = ev.clientY;
+                if(x >= inner.left && x <= inner.right && y >= inner.top && y <= inner.bottom){
+                    const userChoice = target.dataset.choice || 'recognize';
+                    recordChoice(userChoice, reactionTimeMs);
+                } else {
+                    experimentData.push({ word: currentItem.w, attr: currentItem.type, choice: 'edge-miss', err: 1, rt: reactionTimeMs });
+                    currentStep++; nextWord();
+                }
+            } else {
+                experimentData.push({ word: currentItem.w, attr: currentItem.type, choice: 'non-button-miss', err: 1, rt: reactionTimeMs });
+                currentStep++; nextWord();
+            }
+        }
+
+        function recordChoice(userChoice, reactionTimeMs){
+            const currentItem = mockLexicon[currentStep] || {w:'',type:''};
+            let isMisTouch = 0; if(currentItem.type === 'easy' && userChoice === 'forget') isMisTouch = 1; if(currentItem.type === 'hard' && userChoice === 'recognize') isMisTouch = 1;
+            experimentData.push({ word: currentItem.w, attr: currentItem.type, choice: userChoice, err: isMisTouch, rt: reactionTimeMs });
+            currentStep++; nextWord();
+        }
+
+        function terminateExperiment(){
+            clearInterval(gyroIntervalId);
+            document.getElementById('challenge-page').style.display = 'none'; document.getElementById('result-page').style.display = 'flex';
+            let motionVariance = 0; if(gyroMotionSamples.length>0){ const sum = gyroMotionSamples.reduce((a,b)=>a+b,0); const mean = sum/gyroMotionSamples.length; const sq = gyroMotionSamples.map(v=>Math.pow(v-mean,2)); motionVariance = (sq.reduce((a,b)=>a+b,0)/sq.length).toFixed(4); }
+            let csvBody = "布局宇宙,测试单词,词汇类别,被试选择,是否误触,反应时(ms),身体动作方差(Variance)\n";
+            experimentData.forEach(row=>{ csvBody += `${assignedLayout},${row.word},${row.attr},${row.choice},${row.err},${row.rt},${motionVariance}\n`; });
+            document.getElementById('csv-viewer').innerText = csvBody;
+        }
+    </script>
+</body>
+</html>
